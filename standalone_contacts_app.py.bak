@@ -1,0 +1,1069 @@
+#!/usr/bin/env python3
+"""
+Serveur Flask indépendant pour gérer les contacts sans authentification
+Ce script est exécuté séparément de l'application principale
+et fournit un accès direct sans authentification aux contacts
+"""
+
+import os
+import logging
+from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify
+from sqlalchemy import create_engine, desc, asc, or_
+from sqlalchemy.orm import sessionmaker, scoped_session
+import sys
+
+# Configurer le logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Créer l'application Flask
+app = Flask(__name__)
+app.secret_key = os.environ.get("SESSION_SECRET", "standalone_secret_key")
+
+# Importer les modèles et créer la session de base de données
+def get_db_session():
+    """Initialiser la connexion à la base de données et retourner une session"""
+    try:
+        # Importer les modèles depuis l'application principale
+        sys.path.append('.')
+        from database import Base
+        from models import Contact
+        
+        # Configurer la connexion à la base de données
+        database_url = os.environ.get("DATABASE_URL", "sqlite:///property_management.db")
+        engine = create_engine(database_url)
+        
+        # Créer une session
+        session_factory = sessionmaker(bind=engine)
+        session = scoped_session(session_factory)
+        
+        return session, Contact
+    except Exception as e:
+        logging.error(f"Erreur lors de l'initialisation de la base de données: {str(e)}")
+        raise
+
+@app.route('/')
+def index():
+    """Page d'accueil avec liste des contacts"""
+    try:
+        session, Contact = get_db_session()
+        
+        # Récupérer les paramètres de filtrage
+        category = request.args.get('category')
+        search = request.args.get('search')
+        favorites_only = request.args.get('favorites') == '1'
+        sort_by = request.args.get('sort', 'last_name')  # Par défaut, tri par nom
+        sort_order = request.args.get('order', 'asc')  # Par défaut, ordre ascendant
+        
+        # Construire la requête de base
+        query = session.query(Contact)
+        
+        # Appliquer les filtres
+        if category and category != 'all':
+            query = query.filter(Contact.category == category)
+        
+        if search:
+            # Recherche sur plusieurs champs
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Contact.first_name.ilike(search_term),
+                    Contact.last_name.ilike(search_term),
+                    Contact.company_name.ilike(search_term),
+                    Contact.email.ilike(search_term),
+                    Contact.phone.ilike(search_term),
+                    Contact.mobile_phone.ilike(search_term),
+                    Contact.address.ilike(search_term),
+                    Contact.city.ilike(search_term),
+                    Contact.notes.ilike(search_term)
+                )
+            )
+        
+        if favorites_only:
+            query = query.filter(Contact.is_favorite == True)
+        
+        # Appliquer le tri
+        if sort_by == 'category':
+            query = query.order_by(asc(Contact.category) if sort_order == 'asc' else desc(Contact.category))
+        elif sort_by == 'company':
+            query = query.order_by(asc(Contact.company_name) if sort_order == 'asc' else desc(Contact.company_name))
+        elif sort_by == 'first_name':
+            query = query.order_by(asc(Contact.first_name) if sort_order == 'asc' else desc(Contact.first_name))
+        elif sort_by == 'created_at':
+            query = query.order_by(asc(Contact.created_at) if sort_order == 'asc' else desc(Contact.created_at))
+        else:  # default: last_name
+            query = query.order_by(asc(Contact.last_name) if sort_order == 'asc' else desc(Contact.last_name))
+        
+        # Si favoris n'est pas utilisé comme filtre, on les met tout de même en premier
+        if not favorites_only:
+            query = query.order_by(desc(Contact.is_favorite), *query._order_by)
+        
+        # Exécuter la requête
+        contacts = query.all()
+        
+        # Récupérer toutes les catégories uniques pour le filtre
+        categories = [cat[0] for cat in session.query(Contact.category).distinct().all()]
+        categories.sort()
+        
+        # Rendre le template HTML avec la nouvelle interface
+        return render_template_string('''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liste des contacts</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1a1d21;
+            color: #f8f9fa;
+            padding-top: 20px;
+            padding-bottom: 40px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .header {
+            background-color: #242930;
+            padding: 15px 20px;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .search-bar {
+            background-color: #242930;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .contact-row {
+            background-color: #242930;
+            padding: 15px 20px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+        }
+        .contact-row:hover {
+            background-color: #2c3036;
+        }
+        .contact-header {
+            background-color: #1e2226;
+            padding: 12px 20px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            color: #a0a0a0;
+        }
+        .contact-col {
+            flex: 1;
+            padding: 5px 10px;
+        }
+        .actions-col {
+            width: 120px;
+            text-align: right;
+        }
+        .btn-action {
+            color: #a0a0a0;
+            background-color: transparent;
+            border: 1px solid #3d4148;
+            width: 36px;
+            height: 36px;
+            border-radius: 5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 5px;
+            transition: all 0.2s;
+        }
+        .btn-action:hover {
+            background-color: #3d4148;
+            color: white;
+        }
+        .btn-action.edit:hover {
+            background-color: #2b5a8e;
+            border-color: #2b5a8e;
+        }
+        .btn-action.delete:hover {
+            background-color: #a02c2c;
+            border-color: #a02c2c;
+        }
+        .btn-action.view:hover {
+            background-color: #2f6e43;
+            border-color: #2f6e43;
+        }
+        .badge {
+            font-size: 0.75rem;
+            padding: 5px 10px;
+            border-radius: 15px;
+        }
+        .badge-plombier {
+            background-color: #3b76ef;
+        }
+        .badge-electricien {
+            background-color: #e74c3c;
+        }
+        .badge-serrurier {
+            background-color: #8e44ad;
+        }
+        .badge-syndic {
+            background-color: #16a2b8;
+        }
+        .badge-gestionnaire {
+            background-color: #28a745;
+        }
+        .badge-macon {
+            background-color: #6c757d;
+        }
+        .search-input {
+            background-color: #1a1d21;
+            border: 1px solid #3d4148;
+            color: #f8f9fa;
+            border-radius: 5px;
+            padding: 8px 15px;
+        }
+        .search-input:focus {
+            background-color: #242930;
+            color: #f8f9fa;
+            border-color: #5b6bff;
+            box-shadow: none;
+        }
+        .filter-select {
+            background-color: #1a1d21;
+            border: 1px solid #3d4148;
+            color: #f8f9fa;
+            border-radius: 5px;
+            padding: 8px 15px;
+        }
+        .filter-select:focus {
+            background-color: #242930;
+            color: #f8f9fa;
+            border-color: #5b6bff;
+            box-shadow: none;
+        }
+        .btn-custom {
+            background-color: #5b6bff;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            padding: 8px 15px;
+            transition: all 0.2s;
+        }
+        .btn-custom:hover {
+            background-color: #4959d9;
+            color: white;
+        }
+        .btn-filter {
+            background-color: #5b6bff;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            padding: 8px 15px;
+        }
+        .phone-icon {
+            margin-right: 8px;
+            color: #6c757d;
+        }
+        .company-text {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+        }
+        .favorite-star {
+            color: #ffc107;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="h4 mb-0">Liste des contacts</h1>
+            <a href="/add" class="btn btn-custom">
+                <i class="fas fa-plus"></i> Ajouter Un Contact
+            </a>
+        </div>
+        
+        <div class="search-bar">
+            <form id="filterForm" action="/" method="get">
+                <div class="row align-items-center">
+                    <div class="col-md-4 mb-2 mb-md-0">
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark" style="border-color: #3d4148;">
+                                <i class="fas fa-search text-light"></i>
+                            </span>
+                            <input type="text" class="form-control search-input" name="search" placeholder="Rechercher un contact..." value="{{ request.args.get('search', '') }}">
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-2 mb-md-0">
+                        <select class="form-select filter-select" name="category" id="categoryFilter">
+                            <option value="all">Toutes les catégories</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat }}" {% if request.args.get('category') == cat %}selected{% endif %}>{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2 mb-md-0">
+                        <select class="form-select filter-select" name="sort" id="sortFilter">
+                            <option value="last_name" {% if request.args.get('sort') == 'last_name' or not request.args.get('sort') %}selected{% endif %}>Tri par nom</option>
+                            <option value="first_name" {% if request.args.get('sort') == 'first_name' %}selected{% endif %}>Tri par prénom</option>
+                            <option value="category" {% if request.args.get('sort') == 'category' %}selected{% endif %}>Tri par catégorie</option>
+                            <option value="company" {% if request.args.get('sort') == 'company' %}selected{% endif %}>Tri par société</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex justify-content-end">
+                        <button type="submit" class="btn btn-filter">
+                            <i class="fas fa-filter"></i> Filtrer
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        
+        <!-- En-tête du tableau des contacts -->
+        <div class="contact-header">
+            <div class="row">
+                <div class="col-md-3">
+                    <i class="fas fa-user"></i> Nom
+                </div>
+                <div class="col-md-2">
+                    <i class="fas fa-tag"></i> Catégorie
+                </div>
+                <div class="col-md-3">
+                    <i class="fas fa-building"></i> Société
+                </div>
+                <div class="col-md-3">
+                    <i class="fas fa-phone"></i> Contact
+                </div>
+                <div class="col-md-1 text-end">
+                    Actions
+                </div>
+            </div>
+        </div>
+        
+        {% if contacts %}
+            {% for contact in contacts %}
+                {% set badge_color = "badge-" %}
+                {% if contact.category.lower() in ["électricien", "electricien"] %}
+                    {% set badge_color = badge_color + "electricien" %}
+                {% elif contact.category.lower() == "plombier" %}
+                    {% set badge_color = badge_color + "plombier" %}
+                {% elif contact.category.lower() == "syndic" %}
+                    {% set badge_color = badge_color + "syndic" %}
+                {% elif contact.category.lower() == "gestionnaire" %}
+                    {% set badge_color = badge_color + "gestionnaire" %}
+                {% elif contact.category.lower() == "serrurier" %}
+                    {% set badge_color = badge_color + "serrurier" %}
+                {% elif contact.category.lower() == "maçon" or contact.category.lower() == "macon" %}
+                    {% set badge_color = badge_color + "macon" %}
+                {% else %}
+                    {% set badge_color = badge_color + "macon" %}
+                {% endif %}
+                
+                <div class="contact-row">
+                    <div class="col-md-3">
+                        {% if contact.is_favorite %}
+                            <i class="fas fa-star favorite-star"></i>
+                        {% endif %}
+                        {{ contact.first_name }} {{ contact.last_name }}
+                    </div>
+                    <div class="col-md-2">
+                        <span class="badge {{ badge_color }}">{{ contact.category }}</span>
+                    </div>
+                    <div class="col-md-3 company-text">
+                        {{ contact.company_name or '' }}
+                    </div>
+                    <div class="col-md-3">
+                        {% if contact.phone %}
+                            <i class="fas fa-phone phone-icon"></i>{{ contact.phone }}
+                        {% elif contact.mobile_phone %}
+                            <i class="fas fa-mobile-alt phone-icon"></i>{{ contact.mobile_phone }}
+                        {% endif %}
+                    </div>
+                    <div class="col-md-1 text-end">
+                        <a href="/detail/{{ contact.id }}" class="btn btn-action view" title="Voir les détails">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                        <a href="/edit/{{ contact.id }}" class="btn btn-action edit" title="Modifier">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <a href="/delete/{{ contact.id }}" class="btn btn-action delete" title="Supprimer">
+                            <i class="fas fa-trash-alt"></i>
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i> Aucun contact trouvé avec les critères de recherche actuels.
+            </div>
+        {% endif %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Script pour soumettre automatiquement le formulaire lors du changement des filtres
+        document.getElementById('categoryFilter').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+        
+        document.getElementById('sortFilter').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+    </script>
+</body>
+</html>''', contacts=contacts, categories=categories, request=request)
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestionnaire de Contacts</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #212529;
+            color: #f8f9fa;
+            padding-top: 20px;
+            padding-bottom: 40px;
+        }
+        .card {
+            background-color: #2c3034;
+            border: 1px solid #495057;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card-header {
+            background-color: #343a40;
+            border-bottom: 1px solid #495057;
+        }
+        .card-footer {
+            background-color: #343a40;
+            border-top: 1px solid #495057;
+        }
+        .form-control, .form-select {
+            background-color: #343a40;
+            border: 1px solid #495057;
+            color: #f8f9fa;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #3a4147;
+            color: #f8f9fa;
+        }
+        .btn-filter {
+            background-color: #343a40;
+            border: 1px solid #495057;
+            color: #f8f9fa;
+        }
+        .btn-filter:hover, .btn-filter.active {
+            background-color: #495057;
+            color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <h1 class="mb-0">
+                <i class="fas fa-address-book me-2"></i> Gestionnaire de Contacts
+                <span class="badge bg-secondary ms-2">{{ contacts|length }}</span>
+            </h1>
+            <a href="/add" class="btn btn-success">
+                <i class="fas fa-plus-circle me-1"></i> Ajouter un contact
+            </a>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Filtres et recherche</h5>
+            </div>
+            <div class="card-body">
+                <form id="filterForm" action="/" method="get" class="row g-3">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark text-light border-secondary">
+                                <i class="fas fa-search"></i>
+                            </span>
+                            <input type="text" class="form-control" name="search" placeholder="Rechercher..." value="{{ request.args.get('search', '') }}">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" name="category" id="categoryFilter">
+                            <option value="all">Toutes les catégories</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat }}" {% if request.args.get('category') == cat %}selected{% endif %}>{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" name="sort" id="sortFilter">
+                            <option value="last_name" {% if request.args.get('sort') == 'last_name' or not request.args.get('sort') %}selected{% endif %}>Tri par nom</option>
+                            <option value="first_name" {% if request.args.get('sort') == 'first_name' %}selected{% endif %}>Tri par prénom</option>
+                            <option value="category" {% if request.args.get('sort') == 'category' %}selected{% endif %}>Tri par catégorie</option>
+                            <option value="company" {% if request.args.get('sort') == 'company' %}selected{% endif %}>Tri par société</option>
+                            <option value="created_at" {% if request.args.get('sort') == 'created_at' %}selected{% endif %}>Tri par date d'ajout</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="favoritesSwitch" name="favorites" value="1" {% if request.args.get('favorites') == '1' %}checked{% endif %}>
+                            <label class="form-check-label" for="favoritesSwitch">
+                                <i class="fas fa-star text-warning me-1"></i> Favoris uniquement
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="fas fa-filter me-1"></i> Filtrer
+                        </button>
+                        <a href="/" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i> Réinitialiser
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        {% if contacts %}
+            <div class="row">
+                {{ contact_list|safe }}
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i> Aucun contact trouvé avec les critères de recherche actuels.
+            </div>
+        {% endif %}
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Script pour soumettre automatiquement le formulaire lors du changement des filtres
+        document.getElementById('categoryFilter').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+        
+        document.getElementById('sortFilter').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+        
+        document.getElementById('favoritesSwitch').addEventListener('change', function() {
+            document.getElementById('filterForm').submit();
+        });
+    </script>
+</body>
+</html>''', contacts=contacts, categories=categories, request=request)
+        
+    except Exception as e:
+        logging.error(f"Erreur lors de l'affichage des contacts: {str(e)}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        
+        # En cas d'erreur, afficher un message simple
+        return f'''
+        <div class="container mt-5">
+            <div class="alert alert-danger">
+                <h4>Erreur lors de l'affichage des contacts</h4>
+                <p>{str(e)}</p>
+                <p>Veuillez vérifier les logs pour plus de détails.</p>
+            </div>
+        </div>
+        '''
+
+@app.route('/detail/<int:contact_id>')
+def contact_detail(contact_id):
+    """Afficher les détails d'un contact"""
+    try:
+        session, Contact = get_db_session()
+        
+        # Récupérer le contact avec ses relations
+        contact = session.query(Contact).get(contact_id)
+        
+        if not contact:
+            flash("Contact non trouvé", "danger")
+            return redirect(url_for('index'))
+            
+        # Fermer la session
+        session.remove()
+        
+        # Rendre le template HTML
+        return render_template_string('''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ contact.first_name }} {{ contact.last_name }} - Détails du contact</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #212529;
+            color: #f8f9fa;
+            padding-top: 20px;
+            padding-bottom: 40px;
+        }
+        .card {
+            background-color: #2c3034;
+            border: 1px solid #495057;
+        }
+        .card-header {
+            background-color: #343a40;
+            border-bottom: 1px solid #495057;
+        }
+        .contact-icon {
+            font-size: 1.2em;
+            width: 30px;
+            text-align: center;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex align-items-center mb-4">
+            <a href="/" class="btn btn-outline-light me-3">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h1 class="mb-0">
+                {% if contact.is_favorite %}
+                <i class="fas fa-star text-warning me-2"></i>
+                {% endif %}
+                {{ contact.first_name }} {{ contact.last_name }}
+                <span class="badge bg-{% if contact.category.lower() in ['électricien', 'electricien'] %}danger{% elif contact.category.lower() == 'plombier' %}primary{% elif contact.category.lower() == 'syndic' %}info{% elif contact.category.lower() == 'gestionnaire' %}success{% else %}secondary{% endif %} ms-2">
+                    {{ contact.category }}
+                </span>
+            </h1>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Informations de contact</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-building"></i></span>
+                                <div>
+                                    <strong>Société</strong><br>
+                                    {{ contact.company_name or 'Non renseignée' }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-phone"></i></span>
+                                <div>
+                                    <strong>Téléphone fixe</strong><br>
+                                    {{ contact.phone or 'Non renseigné' }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-mobile-alt"></i></span>
+                                <div>
+                                    <strong>Téléphone mobile</strong><br>
+                                    {{ contact.mobile_phone or 'Non renseigné' }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-envelope"></i></span>
+                                <div>
+                                    <strong>Email</strong><br>
+                                    {{ contact.email or 'Non renseigné' }}
+                                    {% if contact.email %}
+                                    <a href="mailto:{{ contact.email }}" class="btn btn-sm btn-outline-light ms-2">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-map-marker-alt"></i></span>
+                                <div>
+                                    <strong>Adresse</strong><br>
+                                    {% if contact.address %}
+                                    {{ contact.address }}<br>
+                                    {% if contact.postal_code or contact.city %}
+                                    {{ contact.postal_code or '' }} {{ contact.city or '' }}
+                                    {% endif %}
+                                    {% else %}
+                                    Non renseignée
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Notes et informations supplémentaires</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <strong>Notes</strong>
+                            <div class="p-3 bg-dark rounded">
+                                {{ contact.notes or 'Aucune note disponible' }}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-calendar-alt"></i></span>
+                                <div>
+                                    <strong>Date de création</strong><br>
+                                    {{ contact.created_at.strftime('%d/%m/%Y à %H:%M') }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="contact-icon"><i class="fas fa-calendar-check"></i></span>
+                                <div>
+                                    <strong>Dernière mise à jour</strong><br>
+                                    {{ contact.updated_at.strftime('%d/%m/%Y à %H:%M') }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between mb-4 mt-2">
+                    <a href="/" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Retour à la liste
+                    </a>
+                    <div>
+                        <a href="/edit/{{ contact.id }}" class="btn btn-primary me-2">
+                            <i class="fas fa-edit me-1"></i> Modifier
+                        </a>
+                        <a href="/" class="btn btn-danger">
+                            <i class="fas fa-trash-alt me-1"></i> Supprimer
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>''', contact=contact)
+        
+    except Exception as e:
+        logging.error(f"Erreur lors de l'affichage des détails du contact: {str(e)}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        
+        # En cas d'erreur, afficher un message simple
+        return f'''
+        <div class="container mt-5">
+            <div class="alert alert-danger">
+                <h4>Erreur lors de l'affichage des détails du contact</h4>
+                <p>{str(e)}</p>
+                <p>Veuillez vérifier les logs pour plus de détails.</p>
+                <p><a href="/" class="btn btn-primary">Retour à la liste</a></p>
+            </div>
+        </div>
+        '''
+
+@app.route('/add', methods=['GET', 'POST'])
+def add_contact():
+    """Ajouter un nouveau contact"""
+    try:
+        session, Contact = get_db_session()
+        
+        if request.method == 'POST':
+            logging.info("Soumission du formulaire d'ajout de contact - Méthode POST")
+            
+            # Récupérer les données du formulaire
+            first_name = request.form.get('first_name')
+            last_name = request.form.get('last_name')
+            company_name = request.form.get('company_name')
+            category = request.form.get('category')
+            email = request.form.get('email')
+            phone = request.form.get('phone')
+            mobile_phone = request.form.get('mobile_phone')
+            address = request.form.get('address')
+            postal_code = request.form.get('postal_code')
+            city = request.form.get('city')
+            notes = request.form.get('notes')
+            is_favorite = request.form.get('is_favorite') == '1'
+            
+            # Validation
+            if not first_name or not last_name or not category:
+                flash('Le prénom, le nom et la catégorie sont obligatoires', 'danger')
+                return redirect(url_for('add_contact'))
+            
+            try:
+                # Créer le contact
+                contact = Contact(
+                    first_name=first_name,
+                    last_name=last_name,
+                    company_name=company_name,
+                    category=category,
+                    email=email,
+                    phone=phone,
+                    mobile_phone=mobile_phone,
+                    address=address,
+                    postal_code=postal_code,
+                    city=city,
+                    notes=notes,
+                    is_favorite=is_favorite
+                )
+                
+                # Ajouter le contact à la base de données
+                session.add(contact)
+                session.commit()
+                
+                flash('Contact ajouté avec succès', 'success')
+                return redirect(url_for('index'))
+            except Exception as e:
+                session.rollback()
+                logging.error(f"Erreur lors de l'ajout du contact: {str(e)}")
+                flash(f'Erreur lors de l\'ajout du contact: {str(e)}', 'danger')
+        
+        # Catégories prédéfinies pour le formulaire
+        categories = [
+            'Plombier', 'Électricien', 'Maçon', 'Syndic', 'Gestionnaire', 
+            'Serrurier', 'Peintre', 'Menuisier', 'Chauffagiste', 'Jardinier',
+            'Agent immobilier', 'Notaire', 'Avocat', 'Comptable', 'Autre'
+        ]
+        
+        # Fermer la session
+        session.remove()
+        
+        # Afficher le formulaire
+        return render_template_string('''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajouter un contact</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #212529;
+            color: #f8f9fa;
+            padding-top: 20px;
+            padding-bottom: 40px;
+        }
+        .card {
+            background-color: #2c3034;
+            border: 1px solid #495057;
+        }
+        .card-header {
+            background-color: #343a40;
+            border-bottom: 1px solid #495057;
+        }
+        .form-control, .form-select {
+            background-color: #343a40;
+            border: 1px solid #495057;
+            color: #f8f9fa;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #3a4147;
+            color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex align-items-center mb-4">
+            <a href="/" class="btn btn-outline-light me-3">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h1 class="mb-0">Ajouter un contact</h1>
+        </div>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <form action="/add" method="post">
+            <div class="row">
+                <!-- Informations personnelles -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Informations personnelles</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="first_name" class="form-label">Prénom <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="first_name" name="first_name" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="last_name" class="form-label">Nom <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="last_name" name="last_name" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="company_name" class="form-label">Société</label>
+                                <input type="text" class="form-control" id="company_name" name="company_name">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="category" class="form-label">Catégorie <span class="text-danger">*</span></label>
+                                <select class="form-select" id="category" name="category" required>
+                                    <option value="">Sélectionner une catégorie</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category }}">{{ category }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="is_favorite" name="is_favorite" value="1">
+                                <label class="form-check-label" for="is_favorite">
+                                    <i class="fas fa-star text-warning me-1"></i> Ajouter aux favoris
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Coordonnées -->
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Coordonnées</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="phone" class="form-label">Téléphone fixe</label>
+                                <input type="tel" class="form-control" id="phone" name="phone">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="mobile_phone" class="form-label">Téléphone mobile</label>
+                                <input type="tel" class="form-control" id="mobile_phone" name="mobile_phone">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="address" class="form-label">Adresse</label>
+                                <input type="text" class="form-control" id="address" name="address">
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="postal_code" class="form-label">Code postal</label>
+                                        <input type="text" class="form-control" id="postal_code" name="postal_code">
+                                    </div>
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="mb-3">
+                                        <label for="city" class="form-label">Ville</label>
+                                        <input type="text" class="form-control" id="city" name="city">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Notes -->
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Notes</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="notes" class="form-label">Notes et commentaires</label>
+                                <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons d'action -->
+                <div class="col-12">
+                    <div class="d-flex justify-content-between">
+                        <a href="/" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i> Annuler
+                        </a>
+                        <div>
+                            <button type="reset" class="btn btn-outline-light me-2">
+                                <i class="fas fa-redo me-1"></i> Réinitialiser
+                            </button>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save me-1"></i> Enregistrer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>''', categories=categories)
+        
+    except Exception as e:
+        logging.error(f"Erreur lors de l'affichage du formulaire d'ajout: {str(e)}")
+        import traceback
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        
+        # En cas d'erreur, afficher un message simple
+        return f'''
+        <div class="container mt-5">
+            <div class="alert alert-danger">
+                <h4>Erreur lors de l'affichage du formulaire d'ajout</h4>
+                <p>{str(e)}</p>
+                <p>Veuillez vérifier les logs pour plus de détails.</p>
+                <p><a href="/" class="btn btn-primary">Retour à la liste</a></p>
+            </div>
+        </div>
+        '''
+
+# Route d'édition - juste pour compléter le CRUD
+@app.route('/edit/<int:contact_id>', methods=['GET', 'POST'])
+def edit_contact(contact_id):
+    """Éditer un contact existant"""
+    return f'''
+    <div class="container mt-5">
+        <div class="alert alert-info">
+            <h4>Fonctionnalité en développement</h4>
+            <p>L'édition des contacts sera disponible prochainement.</p>
+            <p><a href="/" class="btn btn-primary">Retour à la liste</a></p>
+        </div>
+    </div>
+    '''
+
+if __name__ == "__main__":
+    # Exécuter l'application sur un autre port pour éviter les conflits
+    app.run(host="0.0.0.0", port=5001, debug=True)

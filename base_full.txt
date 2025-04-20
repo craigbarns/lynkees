@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>{% block title %}LYNKEES - Gestion de Biens Immobiliers{% endblock %}</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ url_for('static', filename='images/lynkees-logomark.svg') }}" type="image/svg+xml">
+    <!-- Bootstrap CSS from CDN (version 5.3.2) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <!-- Nous n'utilisons plus le thème sombre -->
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-dark-5@1.1.3/dist/css/bootstrap-dark.min.css"> -->
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/contacts.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/property-cards-reset.css') }}">
+    <!-- Correction pour les menus déroulants -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dropdown-fix.css') }}">
+    <!-- Force Black and White Theme -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/black-white-override.css') }}">
+    <!-- Couleurs d'accent violettes -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/accent-colors.css') }}">
+    <!-- Responsive styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+    <!-- Fix spécifique pour les tooltips et modals -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tooltip-fix.css') }}">
+    <!-- Styles d'urgence pour forcer le contraste -->
+    <style>
+        /* Forcer tous les textes à être visibles - SOLUTION EXTRÊME */
+        body * {
+            color: #FFFFFF !important;
+        }
+        
+        /* Contenu dans des modals et autres conteneurs */
+        .modal-content, .modal-body, .modal-header, .modal-footer,
+        .tooltip, .tooltip-inner, .popover, .popover-header, .popover-body,
+        .dropdown-menu, .dropdown-item, .list-group-item {
+            color: #FFFFFF !important;
+            background-color: #000000 !important;
+        }
+        
+        /* Bordures contrastées */
+        .modal-content, .tooltip-inner, .popover, .dropdown-menu {
+            border: 2px solid #FFFFFF !important;
+        }
+        
+        /* CSS pour créer un tooltip personnalisé si Bootstrap échoue */
+        [data-bs-toggle="tooltip"] {
+            position: relative;
+        }
+        
+        [data-bs-toggle="tooltip"]:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            background: #000000;
+            color: #FFFFFF;
+            border-radius: 5px;
+            font-size: 14px;
+            white-space: nowrap;
+            border: 2px solid #FFFFFF;
+            z-index: 10000;
+            font-weight: bold;
+        }
+        
+        /* Force tous les éléments de formulaire à être visibles */
+        select, option, input, textarea, .form-control, .form-select {
+            background-color: #1a1a1a !important;
+            color: #FFFFFF !important;
+            border-color: #666666 !important;
+        }
+        
+        /* Spécial pour les étiquettes et options */
+        label, .form-label {
+            color: #FFFFFF !important;
+            font-weight: 500 !important;
+        }
+        
+        /* Garantit que les options sont visibles dans les sélecteurs */
+        option {
+            background-color: #000000 !important;
+            color: #FFFFFF !important;
+            padding: 5px !important;
+        }
+        
+        /* Correction spécifique pour les éléments de date */
+        .flatpickr-calendar,
+        .flatpickr-month,
+        .flatpickr-weekday,
+        .flatpickr-day {
+            background-color: #000000 !important;
+            color: #FFFFFF !important;
+        }
+        
+        /* SOLUTION RADICALE POUR LES ZONES ROUGES OU COLORÉES */
+        /* Ajouter un contour noir autour de tous les textes */
+        .badge, .label, .status, .btn, 
+        .card-header, .card-title,
+        [class*="text-"], [class*="bg-"],
+        [style*="color"], [style*="background"] {
+            text-shadow: 
+                -1px -1px 0 #000,
+                1px -1px 0 #000,
+                -1px 1px 0 #000,
+                1px 1px 0 #000,
+                0px 2px 2px rgba(0,0,0,0.8) !important;
+            font-weight: bold !important;
+        }
+        
+        /* Ajouter un fond semi-transparent pour les textes sur fonds colorés */
+        .badge:after, .btn:after, 
+        [class*="bg-"]:after,
+        [style*="background-color"]:after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.3) !important;
+            z-index: -1;
+            border-radius: inherit;
+        }
+        
+        /* Positionnement relatif nécessaire */
+        .badge, .btn, [class*="bg-"],
+        [style*="background-color"] {
+            position: relative !important;
+        }
+    </style>
+    {% block head_styles %}{% endblock %}
+    {% block head %}{% endblock %}
+    {% block head_scripts %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-black mb-4 shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <img src="{{ url_for('static', filename='images/lynkees-logomark.png') }}" alt="LYNKEES Logo" width="40" class="d-inline-block align-middle me-2">
+                <span class="fs-5 fw-bold align-middle">LYNKEES</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user %}
+                    <!-- Dropdown pour les biens immobiliers -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if '/properties/' in request.path or request.path == url_for('properties_list') or '/buildings/' in request.path %}active{% endif %}" href="#" id="propertiesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-home me-1"></i>Biens
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="propertiesDropdown">
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('properties_list') %}active{% endif %}" href="{{ url_for('properties_list') }}">
+                                    <i class="fas fa-list me-1"></i>Liste des biens
+                                </a>
+                            </li>
+                            <!-- Dashboard supprimé comme demandé -->
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('buildings_list') %}active{% endif %}" href="{{ url_for('buildings_list') }}">
+                                    <i class="fas fa-building me-1"></i>Immeubles
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_property') %}active{% endif %}" href="{{ url_for('add_property') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter un bien
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_building') %}active{% endif %}" href="{{ url_for('add_building') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter un immeuble
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <!-- Dropdown pour les finances -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if '/payments/' in request.path or request.path == url_for('tenant_payments_list') or '/charges/' in request.path or request.path == url_for('charges_list') %}active{% endif %}" href="#" id="financeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-money-bill-wave me-1"></i>Finances
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="financeDropdown">
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('tenant_payments_list') %}active{% endif %}" href="{{ url_for('tenant_payments_list') }}">
+                                    <i class="fas fa-hand-holding-usd me-1"></i>Paiements locataires
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('charges_list') %}active{% endif %}" href="{{ url_for('charges_list') }}">
+                                    <i class="fas fa-file-invoice-dollar me-1"></i>Charges
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_tenant_payment') %}active{% endif %}" href="{{ url_for('add_tenant_payment') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter un paiement
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_charge') %}active{% endif %}" href="{{ url_for('add_charge') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter une charge
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <!-- Dropdown pour la documentation -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if '/companies/' in request.path or '/documents/' in request.path %}active{% endif %}" href="#" id="docsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-folder-open me-1"></i>Documentation
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="docsDropdown">
+                            <li>
+                                <a class="dropdown-item {% if '/companies/' in request.path %}active{% endif %}" href="{{ url_for('companies_list') }}">
+                                    <i class="fas fa-briefcase me-1"></i>Base documentaire
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_company') %}active{% endif %}" href="{{ url_for('add_company') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter une société
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <!-- Contacts -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if '/contacts' in request.path %}active{% endif %}" href="#" id="contactsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-address-book me-1"></i>Contacts
+                        </a>
+                        <ul class="dropdown-menu" aria-labelledby="contactsDropdown">
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('contacts_list') %}active{% endif %}" href="{{ url_for('contacts_list') }}">
+                                    <i class="fas fa-list me-1"></i>Liste des contacts
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item {% if request.path == url_for('add_contact') %}active{% endif %}" href="{{ url_for('add_contact') }}">
+                                    <i class="fas fa-plus me-1"></i>Ajouter un contact
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <!-- Version simplifiée pour les utilisateurs non connectés -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('properties_list') %}active{% endif %}" href="{{ url_for('properties_list') }}">
+                            <i class="fas fa-home me-1"></i>Biens
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('buildings_list') %}active{% endif %}" href="{{ url_for('buildings_list') }}">
+                            <i class="fas fa-building me-1"></i>Immeubles
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    {% if current_user %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-user-circle me-1"></i>{{ current_user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('profile') }}">
+                                    <i class="fas fa-id-card me-1"></i>Profil
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('logout') }}">
+                                    <i class="fas fa-sign-out-alt me-1"></i>Déconnexion
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('login') %}active{% endif %}" href="{{ url_for('login') }}">
+                            <i class="fas fa-sign-in-alt me-1"></i>Connexion
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('register') %}active{% endif %}" href="{{ url_for('register') }}">
+                            <i class="fas fa-user-plus me-1"></i>Inscription
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mb-5">
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Main content block -->
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="footer mt-auto py-3 bg-black">
+        <div class="container text-center">
+            <span class="text-white">© 2025 LYNKEES. Tous droits réservés.</span>
+        </div>
+    </footer>
+
+    <!-- Bulles flottantes pour navigation rapide -->
+    {% if current_user %}
+    <!-- Menu de navigation rapide -->
+    <div class="position-fixed bottom-0 end-0 p-3 fab-wrapper" style="z-index: 1050;">
+        <div class="fab-container">
+            <!-- L'assistant IA a été désactivé -->
+            
+            <!-- Menu de navigation rapide -->
+            <div class="quick-nav-container mt-3">
+                <div class="d-flex flex-column align-items-center d-md-flex d-none">
+                    <!-- Version verticale pour écrans moyens et grands -->
+                    <div class="quick-nav-item" data-bs-toggle="tooltip" data-bs-placement="left" title="Ajouter un bien">
+                        <a href="{{ url_for('add_property') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-home"></i>
+                        </a>
+                    </div>
+                    <div class="quick-nav-item mt-2" data-bs-toggle="tooltip" data-bs-placement="left" title="Ajouter un paiement">
+                        <a href="{{ url_for('add_tenant_payment') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </a>
+                    </div>
+                    <div class="quick-nav-item mt-2" data-bs-toggle="tooltip" data-bs-placement="left" title="Ajouter un contact">
+                        <a href="{{ url_for('add_contact') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-address-book"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="d-flex flex-row align-items-center d-md-none">
+                    <!-- Version horizontale pour petits écrans -->
+                    <div class="quick-nav-item" data-bs-toggle="tooltip" data-bs-placement="top" title="Ajouter un bien">
+                        <a href="{{ url_for('add_property') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-home"></i>
+                        </a>
+                    </div>
+                    <div class="quick-nav-item ms-2" data-bs-toggle="tooltip" data-bs-placement="top" title="Ajouter un paiement">
+                        <a href="{{ url_for('add_tenant_payment') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </a>
+                    </div>
+                    <div class="quick-nav-item ms-2" data-bs-toggle="tooltip" data-bs-placement="top" title="Ajouter un contact">
+                        <a href="{{ url_for('add_contact') }}" class="btn btn-dark btn-sm rounded-circle shadow quick-nav-btn">
+                            <i class="fas fa-address-book"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- L'assistant IA a été désactivé -->
+    {% endif %}
+
+    <!-- Bootstrap JS Bundle (version 5.3.2 pour garantir la compatibilité) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery pour certaines fonctionnalités avancées -->
+    <script src="https://code.jquery.com/jquery-3.7.1.slim.min.js"></script>
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <!-- Améliorations pour les menus déroulants -->
+    <script src="{{ url_for('static', filename='js/dropdowns.js') }}"></script>
+    <!-- Fix pour les tooltips et modals -->
+    <script src="{{ url_for('static', filename='js/tooltip-fix.js') }}"></script>
+    
+    <!-- Script pour styliser les bulles flottantes et la navigation -->
+    <style>
+        /* Styles pour le conteneur de menu FAB (Floating Action Button) */
+        .fab-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        /* Styles pour la bulle principal (Assistant IA) */
+        .chat-bubble-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        
+        #chatBubble {
+            width: 65px;
+            height: 65px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            background-color: #000000;
+            border: 1px solid #333333;
+            z-index: 1060;
+        }
+        
+        #chatBubble:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+            background-color: #111111;
+        }
+        
+        #chatBubble i {
+            font-size: 1.5rem;
+        }
+        
+        .chat-bubble-label {
+            background-color: #000000;
+            color: white;
+            padding: 3px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-top: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            opacity: 0.9;
+            z-index: 1060;
+            border: 1px solid #333333;
+        }
+        
+        /* Styles pour le menu de navigation rapide */
+        .quick-nav-container {
+            opacity: 0.8;
+            transition: all 0.3s ease;
+        }
+        
+        .quick-nav-container:hover {
+            opacity: 1;
+        }
+        
+        .quick-nav-btn {
+            width: 45px;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease;
+        }
+        
+        .quick-nav-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Style pour les boutons de questions rapides */
+        .quick-questions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        
+        .quick-question-btn {
+            font-size: 0.85rem;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        
+        .quick-question-btn:hover {
+            background-color: #FFFFFF;
+            color: #000000;
+        }
+        
+        /* Animation de pulsation */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        #chatBubble {
+            animation: pulse 2s infinite;
+        }
+        
+        /* Ajustements pour l'affichage mobile */
+        @media (max-width: 768px) {
+            .fab-wrapper {
+                bottom: 10px;
+                right: 10px;
+                padding: 0 !important;
+                display: flex;
+                justify-content: flex-end;
+            }
+            
+            #chatBubble {
+                width: 50px;
+                height: 50px;
+            }
+            
+            .chat-bubble-label {
+                font-size: 0.7rem;
+            }
+            
+            .quick-nav-btn {
+                width: 45px;
+                height: 45px;
+                font-size: 1.25rem;
+            }
+            
+            .quick-nav-container {
+                display: flex; /* Afficher les boutons sur mobile */
+                flex-direction: row;
+                margin-top: 0 !important;
+            }
+            
+            .quick-nav-item {
+                margin-top: 0 !important;
+                margin-left: 10px !important;
+            }
+            
+            /* Correction pour éviter que le bouton ne soit masqué par des éléments de navigation */
+            .position-fixed.bottom-0.end-0 {
+                z-index: 1080 !important;
+            }
+        }
+    </style>
+    
+    <!-- JavaScript pour les fonctionnalités de navigation et d'interaction -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Initialiser tous les composants Bootstrap
+        
+        // Initialiser les tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Initialiser les dropdowns
+        var dropdownElementList = [].slice.call(document.querySelectorAll('.dropdown-toggle'));
+        var dropdownList = dropdownElementList.map(function (dropdownToggleEl) {
+          return new bootstrap.Dropdown(dropdownToggleEl);
+        });
+        
+        // Initialiser les modals
+        var modalElementList = [].slice.call(document.querySelectorAll('.modal'));
+        var modalList = modalElementList.map(function (modalEl) {
+          return new bootstrap.Modal(modalEl);
+        });
+        
+        // Gérer les boutons de questions rapides
+        var quickQuestionBtns = document.querySelectorAll('.quick-question-btn');
+        
+        quickQuestionBtns.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var questionToAsk = this.getAttribute('data-question');
+            
+            // Trouver l'iframe de chat
+            var chatIframe = document.querySelector('#chatModal iframe');
+            
+            if (chatIframe && chatIframe.contentWindow) {
+              // Accéder aux éléments dans l'iframe du chat
+              var iframeDoc = chatIframe.contentWindow.document;
+              var chatInput = iframeDoc.querySelector('#message-input');
+              var sendButton = iframeDoc.querySelector('button[type="submit"]');
+              
+              if (chatInput && sendButton) {
+                // Remplir le champ de message et simuler l'envoi
+                chatInput.value = questionToAsk;
+                sendButton.click();
+              }
+            }
+          });
+        });
+      });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
